@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#b91c1c">
+<title>Rota Home Care</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#f8fafc;--card:#ffffff;--texto:#0f172a;--suave:#64748b;--borda:#e2e8f0;
+  --primaria:#b91c1c;--primaria-t:#ffffff;--verde:#15803d;--amarelo:#b45309;--azul:#1d4ed8;
+  --verde-bg:#dcfce7;--amarelo-bg:#fef3c7;--vermelho-bg:#fee2e2;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b1120;--card:#111827;--texto:#e5e7eb;--suave:#94a3b8;--borda:#1f2937;
+    --primaria:#ef4444;--verde:#4ade80;--amarelo:#fbbf24;--azul:#60a5fa;
+    --verde-bg:#052e16;--amarelo-bg:#422006;--vermelho-bg:#450a0a;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b1120;--card:#111827;--texto:#e5e7eb;--suave:#94a3b8;--borda:#1f2937;
+  --primaria:#ef4444;--verde:#4ade80;--amarelo:#fbbf24;--azul:#60a5fa;
+  --verde-bg:#052e16;--amarelo-bg:#422006;--vermelho-bg:#450a0a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--texto);overflow:hidden}
+#mapa{position:absolute;inset:0;z-index:1}
+button{font:inherit;cursor:pointer;border:1px solid var(--borda);background:var(--card);color:var(--texto);border-radius:10px;padding:10px 14px;font-weight:600}
+button.prim{background:var(--primaria);color:var(--primaria-t);border-color:var(--primaria)}
+button.ok{background:var(--verde);color:#fff;border-color:var(--verde)}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{font:inherit;color:var(--texto);background:var(--bg);border:1px solid var(--borda);border-radius:8px;padding:8px 10px;width:100%}
+label{font-size:.8rem;color:var(--suave);display:block;margin:10px 0 4px}
+
+/* HUD de navegação */
+#hud{position:absolute;top:10px;left:10px;right:10px;z-index:500;display:none;gap:8px;flex-direction:column}
+#hud.on{display:flex}
+.instr{background:var(--primaria);color:#fff;border-radius:14px;padding:12px 14px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.instr .dist{font-size:1.6rem;font-weight:800}
+.instr .txt{font-size:1rem;font-weight:600}
+.hudlinha{display:flex;gap:8px}
+.pilula{flex:1;background:var(--card);border:1px solid var(--borda);border-radius:12px;padding:8px 10px;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.pilula b{display:block;font-size:1.15rem}
+.pilula span{font-size:.7rem;color:var(--suave)}
+.pilula.alerta{background:var(--vermelho-bg);border-color:var(--primaria)}
+.pilula.alerta b{color:var(--primaria)}
+
+/* Painel inferior */
+#painel{position:absolute;left:0;right:0;bottom:0;z-index:600;background:var(--card);border-top-left-radius:18px;border-top-right-radius:18px;
+  box-shadow:0 -4px 20px rgba(0,0,0,.2);max-height:62vh;display:flex;flex-direction:column;transition:max-height .25s}
+#painel.min{max-height:64px}
+.puxador{padding:8px 0 4px;display:flex;justify-content:center;cursor:pointer}
+.puxador i{width:44px;height:5px;border-radius:3px;background:var(--borda)}
+.abas{display:flex;gap:4px;padding:0 12px 8px}
+.abas button{flex:1;padding:8px;font-size:.85rem;border-radius:8px}
+.abas button.ativa{background:var(--texto);color:var(--card);border-color:var(--texto)}
+.conteudo{overflow-y:auto;padding:0 16px 16px;flex:1}
+.aba{display:none}.aba.ativa{display:block}
+.barra{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+.barra>*{flex:1 1 auto}
+.pac{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--borda)}
+.pac input[type=checkbox]{width:22px;height:22px;flex:0 0 22px;margin-top:2px}
+.pac .info{flex:1;min-width:0}
+.pac .nome{font-weight:700;font-size:.95rem}
+.pac .end{font-size:.8rem;color:var(--suave);overflow-wrap:anywhere}
+.pac .acoes{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.pac .acoes button{padding:5px 9px;font-size:.75rem;border-radius:7px}
+.tag{display:inline-block;font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:20px;margin-left:4px;vertical-align:middle}
+.tag.ok{background:var(--verde-bg);color:var(--verde)}
+.tag.pend{background:var(--amarelo-bg);color:var(--amarelo)}
+.tag.sem{background:var(--vermelho-bg);color:var(--primaria)}
+.resumo{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:8px 0}
+.kpi{background:var(--bg);border:1px solid var(--borda);border-radius:10px;padding:10px}
+.kpi b{display:block;font-size:1.2rem}
+.kpi span{font-size:.72rem;color:var(--suave)}
+.kpi.verde b{color:var(--verde)}
+.parada{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--borda);font-size:.88rem}
+.num{width:28px;height:28px;flex:0 0 28px;border-radius:50%;background:var(--primaria);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem}
+.num.feito{background:var(--verde)}
+.nota{font-size:.78rem;color:var(--suave);line-height:1.45;margin:8px 0}
+.vazio{text-align:center;padding:24px 8px;color:var(--suave)}
+h3{font-size:.95rem;margin:14px 0 4px}
+
+/* Alerta de chegada */
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;display:none;align-items:flex-end;justify-content:center;padding:16px}
+#modal.on{display:flex}
+.caixa{background:var(--card);border-radius:16px;padding:18px;max-width:460px;width:100%}
+.caixa h2{font-size:1.15rem;margin-bottom:6px}
+.caixa p{font-size:.9rem;color:var(--suave);margin-bottom:12px}
+.caixa .barra button{padding:13px}
+#toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-150%);background:var(--texto);color:var(--card);padding:10px 16px;border-radius:10px;font-size:.85rem;font-weight:600;z-index:1100;transition:transform .3s;max-width:90vw}
+#toast.on{transform:translateX(-50%) translateY(0)}
+.fab{position:absolute;right:12px;z-index:550;width:46px;height:46px;border-radius:50%;padding:0;font-size:1.2rem;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+#btnCentrar{bottom:calc(62vh + 12px)}
+#painel.min ~ #btnCentrar{bottom:76px}
+.amb-icone{font-size:26px;line-height:26px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+.pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+.pin span{transform:rotate(45deg);color:#fff;font-size:11px;font-weight:800}
+.modoclique #mapa{cursor:crosshair}
+@media (min-width:900px){
+  #painel{left:12px;right:auto;bottom:12px;top:12px;width:400px;max-height:none;border-radius:18px}
+  #painel.min{max-height:none}
+  .puxador{display:none}
+  #hud{left:424px}
+  #btnCentrar,#painel.min ~ #btnCentrar{bottom:24px}
+}
+</style>
+</head>
+<body>
+<div id="mapa"></div>
+
+<div id="hud">
+  <div class="instr"><div class="dist" id="hudDist">—</div><div class="txt" id="hudTxt">Aguardando GPS…</div></div>
+  <div class="hudlinha">
+    <div class="pilula" id="pilVel"><b id="hudVel">0</b><span>km/h (eco ≤ <em id="hudEco">60</em>)</span></div>
+    <div class="pilula"><b id="hudEta">—</b><span>min até o paciente</span></div>
+    <div class="pilula"><b id="hudFalta">—</b><span>km restantes</span></div>
+  </div>
+</div>
+
+<div id="painel">
+  <div class="puxador" id="puxador"><i></i></div>
+  <div class="abas">
+    <button data-aba="pacientes" class="ativa">Pacientes</button>
+    <button data-aba="rota">Rota</button>
+    <button data-aba="ajustes">Ajustes</button>
+  </div>
+  <div class="conteudo">
+    <section class="aba ativa" id="aba-pacientes">
+      <div class="barra">
+        <button class="prim" id="btnImportar">Importar planilha</button>
+        <button id="btnExportar">Exportar</button>
+      </div>
+      <input type="file" id="arquivo" accept=".xlsx,.xls,.csv" hidden>
+      <input type="search" id="busca" placeholder="Buscar nome, bairro ou rua">
+      <div class="barra">
+        <button id="btnTodos">Marcar todos</button>
+        <button id="btnNenhum">Limpar</button>
+      </div>
+      <div class="barra"><button class="prim" id="btnRota">Calcular melhor rota</button></div>
+      <div id="lista"></div>
+    </section>
+
+    <section class="aba" id="aba-rota">
+      <div id="semRota" class="vazio">Selecione pacientes e toque em <b>Calcular melhor rota</b>.</div>
+      <div id="comRota" hidden>
+        <div class="resumo">
+          <div class="kpi"><b id="kDist">—</b><span>distância total</span></div>
+          <div class="kpi"><b id="kTempo">—</b><span>tempo em velocidade eco</span></div>
+          <div class="kpi"><b id="kCo2">—</b><span>CO₂ estimado</span></div>
+          <div class="kpi verde"><b id="kEcon">—</b><span>economia vs. ordem da planilha</span></div>
+        </div>
+        <div class="barra">
+          <button class="ok" id="btnIniciar">Iniciar navegação</button>
+          <button id="btnParar" hidden>Encerrar</button>
+        </div>
+        <div class="barra">
+          <button id="btnGmaps">Abrir no Google Maps</button>
+          <button id="btnWaze">Abrir no Waze</button>
+        </div>
+        <h3>Ordem das visitas</h3>
+        <div id="paradas"></div>
+        <p class="nota" id="notaRota"></p>
+      </div>
+    </section>
+
+    <section class="aba" id="aba-ajustes">
+      <label for="cfgEco">Velocidade eco máxima (km/h)</label>
+      <input type="number" id="cfgEco" min="20" max="110" step="5">
+      <label for="cfgRaio">Avisar paciente quando faltar (metros)</label>
+      <input type="number" id="cfgRaio" min="100" max="5000" step="100">
+      <label for="cfgFator">Emissão do veículo (kg CO₂ por km)</label>
+      <input type="number" id="cfgFator" min="0.05" max="1.5" step="0.01">
+      <p class="nota">Padrão 0,32 kg/km ≈ van diesel fazendo 8,4 km/L (2,68 kg CO₂ por litro de diesel). Ajuste com o consumo real da sua ambulância: fator = 2,68 ÷ km/L.</p>
+      <label for="cfgMsg">Mensagem de aviso ao paciente</label>
+      <textarea id="cfgMsg" rows="3"></textarea>
+      <p class="nota">Use {nome} e {minutos}. O envio abre o WhatsApp ou SMS do celular do motorista com a mensagem pronta; é preciso tocar em enviar.</p>
+      <label><input type="checkbox" id="cfgVoz" style="width:auto"> Instruções por voz</label>
+      <label><input type="checkbox" id="cfgVoltar" style="width:auto"> Voltar ao ponto de partida no fim</label>
+      <div class="barra" style="margin-top:10px">
+        <button id="btnBase">Definir base no mapa</button>
+        <button id="btnSimular">Simular trajeto</button>
+      </div>
+      <p class="nota" id="notaBase"></p>
+      <div class="barra"><button id="btnApagar">Apagar dados deste aparelho</button></div>
+      <p class="nota">Os dados dos pacientes ficam somente neste aparelho (armazenamento local do navegador). Nada é enviado a servidor, exceto as coordenadas das paradas ao serviço de rotas OSRM para calcular o trajeto.</p>
+    </section>
+  </div>
+</div>
+<button class="fab" id="btnCentrar" title="Centralizar na ambulância">◎</button>
+
+<div id="modal"><div class="caixa">
+  <h2 id="mTitulo"></h2>
+  <p id="mTexto"></p>
+  <div class="barra">
+    <button class="ok" id="mWhats">WhatsApp</button>
+    <button class="prim" id="mSms">SMS</button>
+  </div>
+  <div class="barra"><button id="mFechar">Agora não</button></div>
+</div></div>
+<div id="toast"></div>
+
+<script>
+'use strict';
+// ---------- Armazenamento ----------
+const CHAVE = 'homecare_rota_v1';
+const PADRAO_CFG = {eco:60, raio:800, fator:0.32, voz:true, voltar:false, base:null,
+  msg:'Olá, {nome}. A equipe de Home Care está a caminho e deve chegar em cerca de {minutos} minutos.'};
+let estado = {pacientes:[], cfg:{...PADRAO_CFG}};
+function carregar(){
+  try{ const s = JSON.parse(localStorage.getItem(CHAVE)); if(s){ estado.pacientes = s.pacientes||[]; estado.cfg = {...PADRAO_CFG, ...(s.cfg||{})}; } }catch(e){}
+}
+function salvar(){ try{ localStorage.setItem(CHAVE, JSON.stringify(estado)); }catch(e){ toast('Não foi possível salvar no aparelho'); } }
+
+// ---------- Utilidades ----------
+const $ = id => document.getElementById(id);
+function toast(t, ms=2600){ const el=$('toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('on'), ms); }
+function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function norm(s){ return String(s??'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim(); }
+function km(m){ return (m/1000).toLocaleString('pt-BR',{maximumFractionDigits:1}); }
+function fmtMin(s){ const m=Math.round(s/60); return m<60? m+' min' : Math.floor(m/60)+' h '+(m%60)+' min'; }
+function fmtDist(m){ return m<1000? Math.round(m/10)*10+' m' : km(m)+' km'; }
+function haversine(a,b){ const R=6371000, r=Math.PI/180; const dLat=(b[0]-a[0])*r, dLng=(b[1]-a[1])*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+
+// Converte '16°02'21.8"S 57°38'15.3"W' ou '-16.03, -57.63' em [lat, lng]
+function parseCoord(txt){
+  if(txt==null) return null;
+  const s = String(txt).replace(/′/g,"'").replace(/[″”“]/g,'"').replace(/,(?=\d)/g,'.');
+  const re = /(\d+(?:\.\d+)?)\s*°\s*(?:(\d+(?:\.\d+)?)\s*'\s*)?(?:(\d+(?:\.\d+)?)\s*"?\s*)?([NSEWLO])/gi;
+  const partes = [...s.matchAll(re)];
+  if(partes.length>=2){
+    const conv = m => { let v=+m[1]+(+(m[2]||0))/60+(+(m[3]||0))/3600; const h=m[4].toUpperCase(); if(h==='S'||h==='W'||h==='O') v=-v; return {v,h}; };
+    const a=conv(partes[0]), b=conv(partes[1]);
+    const lat = /[NS]/.test(a.h)? a.v : b.v, lng = /[NS]/.test(a.h)? b.v : a.v;
+    if(Math.abs(lat)<=90 && Math.abs(lng)<=180) return [lat,lng];
+  }
+  const dec = String(txt).match(/(-?\d+\.\d+)\s*[,;\s]\s*(-?\d+\.\d+)/);
+  if(dec){ const lat=+dec[1], lng=+dec[2]; if(Math.abs(lat)<=90 && Math.abs(lng)<=180) return [lat,lng]; }
+  return null;
+}
+function telefoneE164(t){
+  let d = String(t||'').replace(/\D/g,'');
+  if(!d) return '';
+  if(d.startsWith('0')) d = d.replace(/^0+/,'');
+  if(d.length===10 || d.length===11) d = '55'+d;
+  return d;
+}
+
+// ---------- Importação da planilha ----------
+const COLUNAS = {
+  municipio:['municipio','cidade'], nome:['paciente','nome'], bairro:['bairro','localidade','bairro/localidade'],
+  endereco:['endereco','logradouro'], coord:['coordenadas','coordenada','localizacao','gps'],
+  horas:['horas cadastradas','horas'], status:['status de localizacao','status'],
+  telefone:['telefone','celular','fone','whatsapp','contato'], lat:['latitude','lat'], lng:['longitude','lng','lon']
+};
+function mapearCabecalho(linha){
+  const idx = {};
+  linha.forEach((c,i)=>{ const n=norm(c); for(const [k,alts] of Object.entries(COLUNAS)){ if(idx[k]==null && alts.some(a=> n===a || n.startsWith(a))) idx[k]=i; } });
+  return idx;
+}
+function importar(arquivo){
+  const leitor = new FileReader();
+  leitor.onload = e => {
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      let novos = [];
+      for(const nomeAba of wb.SheetNames){
+        const linhas = XLSX.utils.sheet_to_json(wb.Sheets[nomeAba], {header:1, defval:''});
+        const iCab = linhas.findIndex(l => l.some(c => ['paciente','nome'].includes(norm(c))));
+        if(iCab<0) continue;
+        const idx = mapearCabecalho(linhas[iCab]);
+        for(const l of linhas.slice(iCab+1)){
+          const nome = String(l[idx.nome]??'').trim(); if(!nome) continue;
+          let pos = parseCoord(l[idx.coord]);
+          if(!pos && idx.lat!=null && idx.lng!=null){ const la=parseFloat(String(l[idx.lat]).replace(',','.')), lo=parseFloat(String(l[idx.lng]).replace(',','.')); if(isFinite(la)&&isFinite(lo)) pos=[la,lo]; }
+          novos.push({nome, municipio:String(l[idx.municipio]??'').trim(), bairro:String(l[idx.bairro]??'').trim(),
+            endereco:String(l[idx.endereco]??'').trim(), horas:String(l[idx.horas]??'').trim(),
+            status:String(l[idx.status]??'').trim(), telefone:String(l[idx.telefone]??'').trim(), pos});
+        }
+      }
+      if(!novos.length){ toast('Nenhum paciente encontrado. A planilha precisa de uma coluna "Paciente".', 4000); return; }
+      // Preserva telefones, posições e seleção já cadastrados no aparelho
+      const antigos = new Map(estado.pacientes.map(p=>[norm(p.nome)+'|'+norm(p.endereco), p]));
+      novos = novos.map((p,i)=>{ const a=antigos.get(norm(p.nome)+'|'+norm(p.endereco));
+        return {...p, id:'p'+Date.now().toString(36)+i, telefone:p.telefone||a?.telefone||'', pos:p.pos||a?.pos||null, sel:a?.sel||false}; });
+      estado.pacientes = novos; salvar(); limparRota(); renderLista(); desenharPacientes(true);
+      const sem = novos.filter(p=>!p.pos).length;
+      toast(`${novos.length} pacientes importados` + (sem? ` · ${sem} sem coordenadas`:''), 4000);
+    }catch(err){ console.error(err); toast('Erro ao ler a planilha: '+err.message, 5000); }
+  };
+  leitor.readAsArrayBuffer(arquivo);
+}
+function exportar(){
+  if(!estado.pacientes.length){ toast('Nada para exportar'); return; }
+  const dados = estado.pacientes.map(p=>({'Município':p.municipio,'Paciente':p.nome,'Bairro/Localidade':p.bairro,'Endereço':p.endereco,
+    'Telefone':p.telefone,'Latitude':p.pos?+p.pos[0].toFixed(6):'','Longitude':p.pos?+p.pos[1].toFixed(6):'','Horas cadastradas':p.horas,'Status de localização':p.status}));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dados), 'Pacientes');
+  XLSX.writeFile(wb, 'Pacientes_HomeCare_com_telefones.xlsx');
+}
+
+// ---------- Mapa ----------
+const mapa = L.map('mapa', {zoomControl:false}).setView([-16.07,-57.68], 13);
+L.control.zoom({position:'topright'}).addTo(mapa);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap'}).addTo(mapa);
+const camadaPac = L.layerGroup().addTo(mapa), camadaRota = L.layerGroup().addTo(mapa);
+let marcadorAmb = null, marcadorBase = null, modoClique = null;
+
+function pinIcone(cor, texto=''){ return L.divIcon({className:'', iconSize:[26,26], iconAnchor:[13,26], popupAnchor:[0,-24],
+  html:`<div class="pin" style="background:${cor}"><span>${esc(texto)}</span></div>`}); }
+function desenharPacientes(ajustar=false){
+  camadaPac.clearLayers();
+  const ordem = rota ? new Map(rota.ordem.map((id,i)=>[id,i+1])) : new Map();
+  const pts = [];
+  for(const p of estado.pacientes){
+    if(!p.pos) continue;
+    const n = ordem.get(p.id);
+    const feito = nav && nav.concluidas.has(p.id);
+    const cor = feito ? '#15803d' : n ? '#b91c1c' : p.sel ? '#1d4ed8' : '#64748b';
+    L.marker(p.pos, {icon:pinIcone(cor, n||'')}).addTo(camadaPac)
+      .bindPopup(`<b>${esc(p.nome)}</b><br>${esc(p.endereco)}<br>${esc(p.bairro)}${p.telefone?'<br>📞 '+esc(p.telefone):''}`);
+    pts.push(p.pos);
+  }
+  if(ajustar && pts.length) mapa.fitBounds(pts, {padding:[40,40]});
+}
+mapa.on('click', e => {
+  if(!modoClique) return;
+  const pos = [e.latlng.lat, e.latlng.lng];
+  if(modoClique==='base'){ estado.cfg.base = pos; toast('Base definida'); desenharBase(); renderAjustes(); }
+  else { const p = estado.pacientes.find(x=>x.id===modoClique); if(p){ p.pos=pos; toast('Local de '+p.nome.split(' ')[0]+' definido'); } }
+  salvar(); modoClique=null; document.body.classList.remove('modoclique'); renderLista(); desenharPacientes();
+});
+function desenharBase(){
+  if(marcadorBase){ mapa.removeLayer(marcadorBase); marcadorBase=null; }
+  if(estado.cfg.base) marcadorBase = L.marker(estado.cfg.base, {icon:L.divIcon({className:'',html:'<div class="amb-icone">🏥</div>',iconSize:[26,26],iconAnchor:[13,13]})}).addTo(mapa).bindPopup('Base');
+}
+
+// ---------- Lista de pacientes ----------
+function renderLista(){
+  const q = norm($('busca').value);
+  const lista = estado.pacientes.filter(p => !q || norm(p.nome+' '+p.bairro+' '+p.endereco).includes(q));
+  if(!estado.pacientes.length){ $('lista').innerHTML = '<div class="vazio">Importe a planilha de cadastro (.xlsx) para começar.<br>Os dados ficam só neste aparelho.</div>'; return; }
+  $('lista').innerHTML = lista.map(p => {
+    const tag = !p.pos ? '<span class="tag sem">sem local</span>' : norm(p.status)==='pendente' ? '<span class="tag pend">pendente</span>' : '';
+    const tel = p.telefone ? '' : '<span class="tag pend">sem telefone</span>';
+    return `<div class="pac">
+      <input type="checkbox" data-sel="${p.id}" ${p.sel?'checked':''} ${p.pos?'':'disabled'} aria-label="Incluir na rota">
+      <div class="info">
+        <div class="nome">${esc(p.nome)}${tag}${tel}</div>
+        <div class="end">${esc(p.endereco)} · ${esc(p.bairro)}${p.horas?' · '+esc(p.horas)+(/^\d+$/.test(p.horas)?'h':''):''}</div>
+        <div class="acoes">
+          <button data-tel="${p.id}">📞 ${p.telefone?esc(p.telefone):'Cadastrar telefone'}</button>
+          <button data-loc="${p.id}">📍 ${p.pos?'Corrigir local':'Marcar no mapa'}</button>
+          ${p.pos?`<button data-ver="${p.id}">Ver</button>`:''}
+        </div>
+      </div></div>`;
+  }).join('') || '<div class="vazio">Nenhum resultado</div>';
+}
+$('lista').addEventListener('click', e => {
+  const b = e.target.closest('button'); if(!b) return;
+  const id = b.dataset.tel||b.dataset.loc||b.dataset.ver, p = estado.pacientes.find(x=>x.id===id); if(!p) return;
+  if(b.dataset.tel){
+    const t = prompt('Telefone (com DDD) de '+p.nome+' ou do responsável:', p.telefone);
+    if(t!==null){ p.telefone=t.trim(); salvar(); renderLista(); }
+  } else if(b.dataset.loc){
+    modoClique = id; document.body.classList.add('modoclique'); minimizarPainel(true); toast('Toque no mapa sobre a casa de '+p.nome.split(' ')[0], 4000);
+  } else { mapa.setView(p.pos, 17); minimizarPainel(true); }
+});
+$('lista').addEventListener('change', e => {
+  const id = e.target.dataset.sel; if(!id) return;
+  const p = estado.pacientes.find(x=>x.id===id); p.sel = e.target.checked; salvar(); desenharPacientes();
+});
+
+// ---------- Rota (OSRM) ----------
+const OSRM = 'https://router.project-osrm.org';
+let rota = null;   // {ordem:[ids], coords:[[lat,lng]], legs, distancia, duracao, duracaoEco, origem}
+function pontoOrigem(){ return posAtual || estado.cfg.base; }
+async function osrm(servico, pts, extra=''){
+  const c = pts.map(p=>p[1].toFixed(6)+','+p[0].toFixed(6)).join(';');
+  const r = await fetch(`${OSRM}/${servico}/v1/driving/${c}?overview=full&geometries=geojson&steps=true${extra}`);
+  if(!r.ok) throw new Error('serviço de rotas respondeu '+r.status);
+  const j = await r.json(); if(j.code!=='Ok') throw new Error(j.message||j.code);
+  return j;
+}
+function duracaoEco(legs){
+  // Recalcula o tempo de cada trecho limitando a velocidade ao teto eco
+  const v = estado.cfg.eco/3.6; let t=0;
+  for(const leg of legs) for(const s of leg.steps) t += Math.max(s.duration, s.distance/v);
+  return t;
+}
+async function calcularRota(){
+  const sel = estado.pacientes.filter(p=>p.sel && p.pos);
+  if(!sel.length){ toast('Marque ao menos um paciente com local definido'); return; }
+  const origem = pontoOrigem();
+  if(!origem){ toast('Ative o GPS ou defina a base em Ajustes'); return; }
+  if(sel.length>90){ toast('Máximo de 90 paradas por rota'); return; }
+  $('btnRota').disabled = true; $('btnRota').textContent = 'Calculando…';
+  try{
+    const voltar = estado.cfg.voltar;
+    const pts = [origem, ...sel.map(p=>p.pos)];
+    // /trip resolve o problema do caixeiro-viajante: melhor ordem de visitas saindo da ambulância
+    const extra = voltar ? '&source=first&roundtrip=true' : '&source=first&destination=any&roundtrip=false';
+    const trip = await osrm('trip', pts, extra);
+    const ordemIdx = trip.waypoints.map((w,i)=>({i, k:w.waypoint_index})).sort((a,b)=>a.k-b.k).map(o=>o.i).filter(i=>i>0);
+    const ordem = ordemIdx.map(i=>sel[i-1].id);
+    const t = trip.trips[0];
+    rota = {ordem, coords:t.geometry.coordinates.map(c=>[c[1],c[0]]), legs:t.legs, distancia:t.distance, duracao:t.duration, duracaoEco:duracaoEco(t.legs), origem};
+    // Comparação: mesma lista na ordem em que aparece na planilha
+    rota.ingenua = null;
+    if(sel.length>1){
+      try{ const r = await osrm('route', voltar? [...pts, origem] : pts, ''); rota.ingenua = r.routes[0].distance; }catch(e){}
+    }
+    renderRota(); desenharPacientes(); mudarAba('rota');
+    mapa.fitBounds(rota.coords, {padding:[40,40]});
+  }catch(err){ console.error(err); toast('Não foi possível calcular a rota: '+err.message, 5000); }
+  finally{ $('btnRota').disabled=false; $('btnRota').textContent='Calcular melhor rota'; }
+}
+function limparRota(){ rota=null; camadaRota.clearLayers(); pararNavegacao(); renderRota(); }
+function desenharLinha(){
+  camadaRota.clearLayers();
+  if(!rota) return;
+  L.polyline(rota.coords, {color:'#ffffff', weight:9, opacity:.9}).addTo(camadaRota);
+  L.polyline(rota.coords, {color:'#b91c1c', weight:5}).addTo(camadaRota);
+}
+function renderRota(){
+  $('semRota').hidden = !!rota; $('comRota').hidden = !rota;
+  desenharLinha(); if(!rota) return;
+  const co2 = rota.distancia/1000*estado.cfg.fator;
+  $('kDist').textContent = km(rota.distancia)+' km';
+  $('kTempo').textContent = fmtMin(rota.duracaoEco);
+  $('kCo2').textContent = co2.toLocaleString('pt-BR',{maximumFractionDigits:1})+' kg';
+  if(rota.ingenua && rota.ingenua>rota.distancia){
+    const dm = rota.ingenua-rota.distancia;
+    $('kEcon').textContent = km(dm)+' km · '+(dm/1000*estado.cfg.fator).toLocaleString('pt-BR',{maximumFractionDigits:1})+' kg';
+  } else $('kEcon').textContent = rota.ingenua ? 'já era ótima' : '—';
+  let acum = 0;
+  $('paradas').innerHTML = rota.ordem.map((id,i)=>{
+    const p = estado.pacientes.find(x=>x.id===id); const leg = rota.legs[i]; acum += leg ? duracaoEco([leg]) : 0;
+    const feito = nav && nav.concluidas.has(id);
+    return `<div class="parada"><div class="num ${feito?'feito':''}">${i+1}</div><div style="flex:1;min-width:0"><b>${esc(p?.nome)}</b><div class="end" style="color:var(--suave);font-size:.78rem">${esc(p?.endereco)} · ${leg?fmtDist(leg.distance):''} · chegada ~${fmtMin(acum)}</div></div>${p?.telefone?'📞':''}</div>`;
+  }).join('');
+  $('notaRota').textContent = `Tempo calculado limitando a velocidade a ${estado.cfg.eco} km/h (sem o limite: ${fmtMin(rota.duracao)}). CO₂ = distância × ${estado.cfg.fator} kg/km. O tempo não considera trânsito em tempo real.`;
+}
+
+// ---------- GPS da ambulância ----------
+let posAtual = null, velAtual = 0, idWatch = null, simulando = null;
+function iniciarGPS(){
+  if(!('geolocation' in navigator)){ toast('Este aparelho não tem GPS disponível no navegador'); return; }
+  idWatch = navigator.geolocation.watchPosition(p => {
+    if(simulando) return;
+    novaPosicao([p.coords.latitude, p.coords.longitude], p.coords.speed, p.coords.heading);
+  }, err => { if(err.code===1) toast('Permita o acesso à localização para acompanhar a ambulância', 4500); },
+  {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+}
+function novaPosicao(pos, velMs){
+  const anterior = posAtual;
+  posAtual = pos;
+  velAtual = velMs!=null && velMs>=0 ? velMs*3.6 : (anterior && novaPosicao._t ? haversine(anterior,pos)/((Date.now()-novaPosicao._t)/1000)*3.6 : 0);
+  novaPosicao._t = Date.now();
+  if(!marcadorAmb){
+    marcadorAmb = L.marker(pos, {icon:L.divIcon({className:'',html:'<div class="amb-icone">🚑</div>',iconSize:[26,26],iconAnchor:[13,13]}), zIndexOffset:1000}).addTo(mapa).bindPopup('Ambulância');
+  } else marcadorAmb.setLatLng(pos);
+  if(nav) atualizarNavegacao(anterior);
+}
+$('btnCentrar').onclick = () => { if(posAtual) mapa.setView(posAtual, 17); else toast('Aguardando sinal de GPS'); };
+
+// ---------- Navegação ----------
+let nav = null; // {passos, iPasso, iParada, concluidas:Set, avisados:Set, foraRota, falado:Set, kmRodados, tEco, tTotal}
+let wakeLock = null;
+function achatarPassos(){
+  const passos = [];
+  rota.legs.forEach((leg, iLeg) => leg.steps.forEach(s => passos.push({...s, iLeg})));
+  return passos;
+}
+function textoManobra(s){
+  const m = s.maneuver, mod = m.modifier||'', via = s.name ? ' na '+s.name : '';
+  const dir = {left:'à esquerda', right:'à direita', 'slight left':'levemente à esquerda', 'slight right':'levemente à direita',
+    'sharp left':'acentuadamente à esquerda', 'sharp right':'acentuadamente à direita', straight:'em frente', uturn:'o retorno'}[mod]||'';
+  switch(m.type){
+    case 'depart': return 'Siga'+via;
+    case 'arrive': return 'Chegada ao paciente';
+    case 'roundabout': case 'rotary': return `Na rotatória, pegue a ${m.exit||1}ª saída`+via;
+    case 'exit roundabout': case 'exit rotary': return 'Saia da rotatória'+via;
+    case 'fork': return 'Na bifurcação, mantenha-se '+(dir||'em frente')+via;
+    case 'end of road': return 'No fim da via, vire '+dir+via;
+    case 'merge': return 'Entre '+(dir||'')+via;
+    case 'new name': case 'continue': return (mod==='straight'||!dir ? 'Continue' : 'Continue '+dir)+via;
+    default: return mod==='uturn' ? 'Faça o retorno'+via : mod==='straight' ? 'Siga em frente'+via : 'Vire '+dir+via;
+  }
+}
+function falar(t){
+  if(!estado.cfg.voz || !('speechSynthesis' in window)) return;
+  speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang='pt-BR'; speechSynthesis.speak(u);
+}
+function bipe(){
+  try{ const ac = bipe.ac || (bipe.ac = new (window.AudioContext||window.webkitAudioContext)()); const o=ac.createOscillator(), g=ac.createGain();
+    o.frequency.value=880; g.gain.value=.15; o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime+.25); }catch(e){}
+}
+async function iniciarNavegacao(){
+  if(!rota) return;
+  if(!posAtual && !simulando){ toast('Aguardando GPS da ambulância…'); }
+  nav = {passos:achatarPassos(), iPasso:0, iParada:0, concluidas:new Set(), avisados:new Set(), falado:new Set(), foraRota:0, kmRodados:0, tEco:0, tTotal:0};
+  $('hud').classList.add('on'); $('btnIniciar').hidden=true; $('btnParar').hidden=false; $('hudEco').textContent=estado.cfg.eco;
+  minimizarPainel(true);
+  try{ if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){}
+  bipe(); // desbloqueia o áudio com o toque do usuário
+  const primeiro = estado.pacientes.find(x=>x.id===rota.ordem[0]);
+  falar('Navegação iniciada. Primeira visita: '+(primeiro?.nome||''));
+  sugerirAvisoSaida();
+  if(posAtual) atualizarNavegacao(null);
+}
+function pararNavegacao(){
+  if(!nav) return;
+  const resumo = nav.tTotal>0 ? ` Rodou ${km(nav.kmRodados*1000)} km, ${Math.round(nav.tEco/nav.tTotal*100)}% do tempo dentro da velocidade eco.` : '';
+  nav=null; $('hud').classList.remove('on'); $('btnIniciar').hidden=false; $('btnParar').hidden=true;
+  if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock=null; }
+  if(simulando){ clearInterval(simulando); simulando=null; $('btnSimular').textContent='Simular trajeto'; }
+  toast('Navegação encerrada.'+resumo, 5000); renderRota(); desenharPacientes();
+}
+// Distância de um ponto à polilinha (aproximação plana local, suficiente para dezenas de km)
+function distLinha(p, linha, ini=0){
+  const kx = 111320*Math.cos(p[0]*Math.PI/180), ky = 110540; let melhor=Infinity;
+  for(let i=Math.max(0,ini); i<linha.length-1; i++){
+    const ax=(linha[i][1]-p[1])*kx, ay=(linha[i][0]-p[0])*ky, bx=(linha[i+1][1]-p[1])*kx, by=(linha[i+1][0]-p[0])*ky;
+    const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy; let t = l2? -(ax*dx+ay*dy)/l2 : 0; t=Math.max(0,Math.min(1,t));
+    const d=Math.hypot(ax+t*dx, ay+t*dy); if(d<melhor) melhor=d;
+  }
+  return melhor;
+}
+function atualizarNavegacao(anterior){
+  const pos = posAtual;
+  // Telemetria eco
+  if(anterior){ const d = haversine(anterior,pos); if(d<500) nav.kmRodados += d/1000; }
+  nav.tTotal++; if(velAtual <= estado.cfg.eco+2) nav.tEco++;
+  const acima = velAtual > estado.cfg.eco+2;
+  $('hudVel').textContent = Math.round(velAtual);
+  $('pilVel').classList.toggle('alerta', acima);
+  if(acima && !nav.alertaVel){ nav.alertaVel=true; bipe(); falar('Reduza a velocidade'); }
+  if(!acima && velAtual < estado.cfg.eco-3) nav.alertaVel=false;
+
+  const idParada = rota.ordem[nav.iParada];
+  const pac = estado.pacientes.find(x=>x.id===idParada);
+  if(!pac){ $('hudTxt').textContent='Todas as visitas concluídas'; $('hudDist').textContent='✓'; return; }
+  const dPac = haversine(pos, pac.pos);
+
+  // Avanço de passo: chegou perto da manobra seguinte
+  while(nav.iPasso < nav.passos.length-1){
+    const prox = nav.passos[nav.iPasso+1], loc=[prox.maneuver.location[1], prox.maneuver.location[0]];
+    if(prox.iLeg < nav.iParada || haversine(pos, loc) < 25) nav.iPasso++; else break;
+  }
+  const prox = nav.passos[Math.min(nav.iPasso+1, nav.passos.length-1)];
+  const locProx = [prox.maneuver.location[1], prox.maneuver.location[0]], dProx = haversine(pos, locProx);
+  const txt = prox.iLeg>nav.iParada ? 'Chegada: '+pac.nome : textoManobra(prox);
+  $('hudDist').textContent = fmtDist(prox.iLeg>nav.iParada? dPac : dProx);
+  $('hudTxt').textContent = txt;
+  const chave = nav.iPasso+'';
+  if(dProx < 150 && !nav.falado.has(chave)){ nav.falado.add(chave); falar('Em '+fmtDist(dProx)+', '+txt); }
+
+  // Tempo e distância restantes até o paciente atual (pelos passos que faltam no trecho)
+  let falta = 0, tFalta = 0;
+  const v = estado.cfg.eco/3.6;
+  nav.passos.forEach((s,i)=>{ if(s.iLeg===nav.iParada && i>nav.iPasso){ falta+=s.distance; tFalta+=Math.max(s.duration, s.distance/v); } });
+  const atual = nav.passos[nav.iPasso]; if(atual && atual.iLeg===nav.iParada){ falta += dProx; tFalta += dProx/v; }
+  if(!falta){ falta = dPac; tFalta = dPac/v; }
+  $('hudFalta').textContent = km(falta); $('hudEta').textContent = Math.max(1,Math.round(tFalta/60));
+
+  // Alerta de aproximação: aciona o aviso ao paciente
+  if(dPac <= estado.cfg.raio && !nav.avisados.has(pac.id)){
+    nav.avisados.add(pac.id); bipe();
+    falar('Chegando em '+pac.nome+'. Avise o paciente.');
+    abrirAviso(pac, Math.max(1,Math.round(tFalta/60)));
+  }
+  // Chegada
+  if(dPac < 40){
+    nav.concluidas.add(pac.id); nav.iParada++; bipe();
+    nav.iPasso = Math.max(0, nav.passos.findIndex(s=>s.iLeg===nav.iParada));
+    const seguinte = estado.pacientes.find(x=>x.id===rota.ordem[nav.iParada]);
+    falar(seguinte ? 'Você chegou. Próxima visita: '+seguinte.nome : 'Você chegou. Esta é a última visita.');
+    toast('Chegada: '+pac.nome, 4000); renderRota(); desenharPacientes();
+    return;
+  }
+  // Fora da rota: recalcula a partir da posição atual, mantendo a ordem otimizada
+  if(!simulando && distLinha(pos, rota.coords) > 80){ if(++nav.foraRota>=4) recalcular(); } else nav.foraRota=0;
+  if(document.body.dataset.seguir!=='nao') mapa.panTo(pos, {animate:true});
+}
+async function recalcular(){
+  if(nav.recalculando) return; nav.recalculando=true; nav.foraRota=0;
+  try{
+    const restantes = rota.ordem.slice(nav.iParada).map(id=>estado.pacientes.find(x=>x.id===id).pos);
+    const pts = [posAtual, ...restantes]; if(estado.cfg.voltar) pts.push(rota.origem);
+    const r = (await osrm('route', pts, '')).routes[0];
+    // Reorganiza os trechos para manter os índices das paradas já feitas
+    const legs = rota.legs.slice(0, nav.iParada).concat(r.legs);
+    rota.legs = legs; rota.coords = r.geometry.coordinates.map(c=>[c[1],c[0]]);
+    nav.passos = achatarPassos(); nav.iPasso = nav.passos.findIndex(s=>s.iLeg===nav.iParada); nav.falado.clear();
+    desenharLinha(); falar('Rota recalculada'); toast('Rota recalculada');
+  }catch(e){ toast('Sem conexão para recalcular a rota'); }
+  finally{ nav && (nav.recalculando=false); }
+}
+document.addEventListener('visibilitychange', async ()=>{ if(nav && document.visibilityState==='visible' && 'wakeLock' in navigator){ try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(e){} } });
+mapa.on('dragstart', ()=>{ document.body.dataset.seguir='nao'; clearTimeout(mapa._vt); mapa._vt=setTimeout(()=>document.body.dataset.seguir='', 15000); });
+
+// ---------- Aviso ao paciente ----------
+let avisoAtual = null;
+function montarMsg(p, min){ return estado.cfg.msg.replace(/\{nome\}/g, p.nome.split(' ')[0]).replace(/\{minutos\}/g, min); }
+function abrirAviso(p, min, titulo){
+  avisoAtual = {p, min};
+  $('mTitulo').textContent = titulo || ('Chegando em '+p.nome);
+  if(p.telefone){
+    $('mTexto').textContent = `Faltam cerca de ${min} min. Enviar aviso para ${p.telefone}: “${montarMsg(p,min)}”`;
+    $('mWhats').hidden=false; $('mSms').hidden=false;
+  } else {
+    $('mTexto').textContent = 'Este paciente não tem telefone cadastrado. Cadastre na aba Pacientes para poder avisar.';
+    $('mWhats').hidden=true; $('mSms').hidden=true;
+  }
+  $('modal').classList.add('on');
+}
+function sugerirAvisoSaida(){
+  const p = estado.pacientes.find(x=>x.id===rota.ordem[0]); if(!p || !p.telefone) return;
+  // Se já estiver dentro do raio de aviso, este aviso substitui o de aproximação
+  if(posAtual && haversine(posAtual, p.pos) <= estado.cfg.raio) nav.avisados.add(p.id);
+  abrirAviso(p, Math.max(1,Math.round(duracaoEco([rota.legs[0]])/60)), 'Saindo para '+p.nome);
+}
+$('mWhats').onclick = () => { const {p,min}=avisoAtual; window.open(`https://wa.me/${telefoneE164(p.telefone)}?text=${encodeURIComponent(montarMsg(p,min))}`, '_blank'); $('modal').classList.remove('on'); };
+$('mSms').onclick = () => { const {p,min}=avisoAtual; location.href = `sms:+${telefoneE164(p.telefone)}?body=${encodeURIComponent(montarMsg(p,min))}`; $('modal').classList.remove('on'); };
+$('mFechar').onclick = () => $('modal').classList.remove('on');
+
+// ---------- Simulação (testar sem sair com a ambulância) ----------
+function simular(){
+  if(simulando){ clearInterval(simulando); simulando=null; $('btnSimular').textContent='Simular trajeto'; return; }
+  if(!rota){ toast('Calcule uma rota primeiro'); return; }
+  const linha = rota.coords; let i=0, frac=0; const passo = 1; // segundos simulados por tique
+  const vel = estado.cfg.eco/3.6*0.9 * 4; // 4× mais rápido que o real
+  posAtual = linha[0];
+  simulando = setInterval(()=>{
+    let anda = vel*passo;
+    while(anda>0 && i<linha.length-1){ const d = haversine(linha[i], linha[i+1])*(1-frac); if(anda>=d){ anda-=d; i++; frac=0; } else { frac += anda/haversine(linha[i],linha[i+1]); anda=0; } }
+    if(i>=linha.length-1){ simular(); toast('Simulação concluída'); return; }
+    const a=linha[i], b=linha[i+1]; novaPosicao([a[0]+(b[0]-a[0])*frac, a[1]+(b[1]-a[1])*frac], estado.cfg.eco/3.6*0.9);
+  }, 1000);
+  $('btnSimular').textContent='Parar simulação';
+  if(!nav) iniciarNavegacao();
+}
+
+// ---------- Painel e ajustes ----------
+function mudarAba(nome){
+  document.querySelectorAll('.abas button').forEach(b=>b.classList.toggle('ativa', b.dataset.aba===nome));
+  document.querySelectorAll('.aba').forEach(s=>s.classList.toggle('ativa', s.id==='aba-'+nome));
+  minimizarPainel(false);
+}
+function minimizarPainel(min){ $('painel').classList.toggle('min', min); }
+document.querySelectorAll('.abas button').forEach(b=>b.onclick=()=>mudarAba(b.dataset.aba));
+$('puxador').onclick = () => minimizarPainel(!$('painel').classList.contains('min'));
+function renderAjustes(){
+  const c = estado.cfg;
+  $('cfgEco').value=c.eco; $('cfgRaio').value=c.raio; $('cfgFator').value=c.fator; $('cfgMsg').value=c.msg; $('cfgVoz').checked=c.voz; $('cfgVoltar').checked=c.voltar;
+  $('notaBase').textContent = c.base ? 'Base definida. Sem GPS, as rotas partem da base.' : 'Sem base definida: a rota parte da posição do GPS.';
+}
+['cfgEco','cfgRaio','cfgFator','cfgMsg','cfgVoz','cfgVoltar'].forEach(id => $(id).addEventListener('change', ()=>{
+  const c = estado.cfg;
+  c.eco = Math.min(110, Math.max(20, +$('cfgEco').value||60)); c.raio = Math.max(100, +$('cfgRaio').value||800);
+  c.fator = Math.max(0.05, +$('cfgFator').value||0.32); c.msg = $('cfgMsg').value || PADRAO_CFG.msg;
+  c.voz = $('cfgVoz').checked; c.voltar = $('cfgVoltar').checked;
+  salvar(); if(rota){ rota.duracaoEco = duracaoEco(rota.legs); renderRota(); }
+}));
+$('btnBase').onclick = () => { modoClique='base'; document.body.classList.add('modoclique'); minimizarPainel(true); toast('Toque no mapa sobre a base (hospital/garagem)', 4000); };
+$('btnSimular').onclick = simular;
+$('btnApagar').onclick = () => { if(confirm('Apagar todos os pacientes e ajustes deste aparelho?')){ try{ localStorage.removeItem(CHAVE); }catch(e){} estado={pacientes:[],cfg:{...PADRAO_CFG}}; limparRota(); renderLista(); renderAjustes(); desenharPacientes(); desenharBase(); } };
+$('btnImportar').onclick = () => $('arquivo').click();
+$('arquivo').onchange = e => { if(e.target.files[0]) importar(e.target.files[0]); e.target.value=''; };
+$('btnExportar').onclick = exportar;
+$('busca').oninput = renderLista;
+$('btnTodos').onclick = () => { estado.pacientes.forEach(p=>{ if(p.pos) p.sel=true; }); salvar(); renderLista(); desenharPacientes(); };
+$('btnNenhum').onclick = () => { estado.pacientes.forEach(p=>p.sel=false); salvar(); renderLista(); limparRota(); desenharPacientes(); };
+$('btnRota').onclick = calcularRota;
+$('btnIniciar').onclick = iniciarNavegacao;
+$('btnParar').onclick = pararNavegacao;
+function linkExterno(tipo){
+  if(!rota) return;
+  const restantes = rota.ordem.filter(id=>!(nav&&nav.concluidas.has(id))).map(id=>estado.pacientes.find(x=>x.id===id).pos);
+  if(!restantes.length) return;
+  if(tipo==='waze'){ const d=restantes[0]; window.open(`https://waze.com/ul?ll=${d[0]},${d[1]}&navigate=yes`, '_blank'); return; }
+  // Google Maps aceita até 9 paradas intermediárias por link
+  const dest = restantes.slice(0,10), fim = dest.pop();
+  const url = `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${fim[0]},${fim[1]}` + (dest.length?'&waypoints='+dest.map(p=>p[0]+','+p[1]).join('|'):'');
+  window.open(url, '_blank');
+}
+$('btnGmaps').onclick = () => linkExterno('gmaps');
+$('btnWaze').onclick = () => linkExterno('waze');
+
+// ---------- Início ----------
+carregar(); renderLista(); renderAjustes(); renderRota(); desenharPacientes(true); desenharBase(); iniciarGPS();
+</script>
+</body>
+</html>
